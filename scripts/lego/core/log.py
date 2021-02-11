@@ -7,6 +7,8 @@ def log(level, msg):
     level 1 : warning
     level 2 : error
 
+    msg : message(str)
+    
     """
 
     dent = "    "

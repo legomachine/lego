@@ -1,0 +1,3 @@
+[submodule "legobox"]
+	path = scripts/lego/blocks/legobox
+	url = https://github.com/legomachine/legobox.git
