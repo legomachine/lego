@@ -1,9 +1,11 @@
 # -*- coding:utf-8 -*-
 
+from __future__ import division
+from __future__ import unicode_literals
+from __future__ import print_function
 
 # maya
 import pymel.core as pm
-import maya.cmds as mc
 
 # lego
 from lego.core.api import (
@@ -11,7 +13,6 @@ from lego.core.api import (
     const,
     prepost
 )
-from lego.blocks.api import lib
 
 #
 import importlib
@@ -26,7 +27,7 @@ def ready(context):
     context : context(dict)
 
     """
-
+    log.log(level=0, msg="ready !")
     guide = None
     node = None
     try:
@@ -58,22 +59,36 @@ def stacking_blocks(context, node):
 
     """
 
+    if const.INIT not in context:
+        init_rig_hierarchy(context, node)
     info = get_block_info(node)
-    children = info[const.CHILDREN]
-    if not children:
-        return False
-    
-    if const.WORLD not in context:
-        lib.world(context)
+    context_name = "{0}_{1}{2}".format(info[const.BLOCK_NAME], info[const.BLOCK_NAME], info[const.BLOCK_NAME])
+    naming_rule = info[const.NAMERULE].format(info[const.BLOCK_NAME],
+                                              info[const.BLOCK_NAME],
+                                              info[const.BLOCK_NAME],
+                                              "{description}",
+                                              "{extension}")
+    if context_name not in context:
+        context[context_name] = dict()
+        context[context_name][const.NAMERULE] = naming_rule
 
-    if info[const.KIND] == const.COMPONENT:
-        for child in children:
-            context[child] = dict()
-            lib.stacking_block(context[child], child)
-        
-    for child in children:
-        stacking_blocks(context, child)
-        
+    if not info[const.ISLEGO]:
+        block = importlib.import_module("lego.blocks.legobox.{0}".format(info[const.BLOCK_TYPE]))
+
+        if const.STEP not in context[context_name]:
+            block.build(context[context_name], node, 0)
+            context[context_name][const.STEP] = 1
+        elif context[context_name][const.STEP] == 1:
+            block.build(context[context_name], node, 1)
+            context[context_name][const.STEP] = 2
+        else:
+            block.build(context[context_name], node, 2)
+
+    if info[const.CHILDREN]:
+        for child in info[const.CHILDREN]:
+            stacking_blocks(context, child)
+    else:
+        return True
 
 def clear(context, node):
     """ Clear scene 
@@ -85,45 +100,83 @@ def clear(context, node):
     node : network root node(str)
 
     """
-    context["mesh"]
-    context["joints"]
-    context["controllers"]
 
+    log.log(level=0, msg="clear !".format(node.attr(const.BLOCK_TYPE).get()))
     node = pm.PyNode(node)
-    if node.hasAttr(const.ISLEGO):
-        pre = node.attr(const.POSTSCRIPTS).get().split(const.SEPARATOR)
-    else:
-        pre = None
+    info = get_block_info(node)
     
-    for script in pre:
+    for script in info[const.POSTSCRIPTS]:
         mod = importlib.import_module(script)
         mod.PrePost.run(context)
+
+def init_rig_hierarchy(context, node):
+    """ create rig hierarchy 
+    rig (hierarchy)
+        model
+        ---modeling...
+        blocks
+        ---another blocks...
+        joints
+        ---binding joints...
+
+    context["init"]["rig"] = root
+    context["init"]["model"] = model
+    context["init"]["blocks"] = blocks
+    context["init"]["joints"] = joints
+
+    """
+    log.log(level=0, msg="init hierarchy !")
+    origin = dt.Vector(0, 0, 0)
+    origin_matrix = transform.getTransformFromPos(origin)
+
+    # node
+    rig = primitive.addTransform(None, "rig", m=origin_matrix)
+    model = primitive.addTransform(rig, "model", m=origin_matrix)
+    blocks = primitive.addTransform(rig, "blocks", m=origin_matrix)
+    joints = primitive.addTransform(rig, "joints", m=origin_matrix)
+
+    # connections
+    rig.controllersVis >> blocks.v
+    rig.jointsVis >> joints.v
+    rig.ControllersOnPlaybackVis >> blocks.hideOnPlayback
+
+    # attribute
+    attribute.lockAttribute(rig)
+    attribute.lockAttribute(model)
+    attribute.lockAttribute(blocks)
+    attribute.lockAttribute(joints)
+    attribute.addAttribute(rig, "controllerVis", "boolean", True)
+    attribute.addAttribute(rig, "ControllersOnPlaybackVis", "boolean", False)
+    attribute.addAttribute(rig, "jointsVis", "boolean", False)
+
+    context[const.INIT] = dict()
+    context[const.INIT]["rig"] = rig
+    context[const.INIT]["model"] = model
+    context[const.INIT]["blocks"] = blocks
+    context[const.INIT]["joints"] = joints
 
 def get_block_info(node):
     """ get block info 
 
     """
-    node = pm.PyNode(node)
     info = dict()
 
-    info[const.KIND]                = node.attr(const.KIND).get()
-
+    info[const.ISROOT]              = node.hasAttr(const.ISLEGO)
     info[const.BLOCK_TYPE]          = node.attr(const.BLOCK_TYPE).get()
     info[const.BLOCK_VERSION]       = node.attr(const.BLOCK_VERSION).get()
     info[const.BLOCK_NAME]          = node.attr(const.BLOCK_NAME).get()
-    info[const.BLOCK_INDEX]         = node.attr(const.BLOCK_INDEX).get()
     info[const.BLOCK_SIDE]          = node.attr(const.BLOCK_SIDE).get()
-    info[const.BLOCK_FEATURE]       = node.attr(const.BLOCK_FEATURE).connections()
+    info[const.BLOCK_INDEX]         = node.attr(const.BLOCK_INDEX).get()
+    info[const.BLOCK_FEATURE]       = [x.name.get() for x in node.attr(const.BLOCK_FEATURE).outputs()]
     info[const.BLOCK_UI]            = node.attr(const.BLOCK_UI).get()
 
     info[const.BLOCK_PARENT]        = node.attr(const.BLOCK_PARENT).get()
-    info[const.BLOCK_PARENT_SPACE]  = node.attr(const.BLOCK_PARENT_SPACE).get()
+    info[const.BLOCK_PARENT_SPACE]  = [x.get() for x in node.attr(const.BLOCK_PARENT_SPACE).inputs(plugins=True)]
 
-    info[const.CHILDREN]            = node.attr(const.CHILDREN).connections()
+    info[const.CHILDREN]            = node.attr(const.CHILDREN).outputs()
     info[const.INPUT]               = node.attr(const.INPUT).get()
-    info[const.OUTPUT]              = node.attr(const.OUTPUT).get().split(const.SEPARATOR)
-    info[const.PRESCRIPTS]          = node.attr(const.PRESCRIPTS).get().split(const.SEPARATOR)
-    info[const.POSTSCRIPTS]         = node.attr(const.POSTSCRIPTS).get().split(const.SEPARATOR)
+    info[const.OUTPUT]              = [x.get() for x in node.attr(const.OUTPUT) if x.get()]
+    info[const.PRESCRIPTS]          = [x.get() for x in node.attr(const.PRESCRIPTS) if x.get()]
+    info[const.POSTSCRIPTS]         = [x.get() for x in node.attr(const.POSTSCRIPTS) if x.get()]
     
-
     return info

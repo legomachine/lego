@@ -1,5 +1,9 @@
 # -*- coding:utf-8 -*-
 
+from __future__ import division
+from __future__ import unicode_literals
+from __future__ import print_function
+
 # 
 import sys
 
@@ -14,8 +18,10 @@ class _const(object):
 __const = _const()
 
 __const.ISLEGO = "isLego"
-__const.KIND = "kind"
-__const.WORLD = "world"
+__const.ISLEGOGUIDE = "isLegoGuide"
+__const.ISLEGORIG = "isLegoRig"
+__const.ISROOT = "isRoot"
+__const.INIT = "init"
 
 __const.ASSEMBLY = "assembly"
 __const.COMPONENT = "component"
@@ -31,17 +37,21 @@ __const.BLOCK_PARENT = "blockParent"
 __const.BLOCK_PARENT_SPACE = "blockParentSpace"
 
 __const.CHILDREN = "children"
-__const.INPUT = "input"
+__const.GUIDE = "guide"
+__const.RIG = "rig"
 __const.OUTPUT = "output"
 __const.PRESCRIPTS = "preScripts"
 __const.POSTSCRIPTS = "postScripts"
 
 __const.MESHES = "meshes"
-__const.JOINTS = "joints"
+__const.JOINT = "joint"
 __const.CONTROLLERS = "controllers"
 
 __const.SEPARATOR = ", "
+__const.STEP = "step"
 
+__const.NAMERULE = "nameRule"
+__const.JOINTNAMERULE = "jointNameRule"
 sys.modules[__name__] = __const
 
 
