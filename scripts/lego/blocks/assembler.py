@@ -4,8 +4,13 @@ from __future__ import division
 from __future__ import unicode_literals
 from __future__ import print_function
 
+# mgear
+from mgear.core import node, fcurve, applyop, vector, icon
+from mgear.core import attribute, transform, primitive
+
 # maya
 import pymel.core as pm
+import pymel.core.datatypes as dt
 
 # lego
 from lego.core.api import (
@@ -13,9 +18,13 @@ from lego.core.api import (
     const,
     prepost
 )
+from lego.blocks import lib
 
 #
 import importlib
+import pprint
+from collections import OrderedDict
+
 
 
 def ready(context):
@@ -29,25 +38,45 @@ def ready(context):
     """
     log.log(level=0, msg="ready !")
     guide = None
-    node = None
+    network = None
     try:
         guide = pm.selected(type="transform")[0]
-        node = guide.message.connections()[0]
+        network = guide.message.connections()[0]
     except:
-        raise Exception("guide : {0}, nodes : {1}".format(guide, node))
+        raise Exception("guide : {0}, network : {1}".format(guide, network))
     
-    if node.hasAttr(const.ISLEGO):
-        pre = node.attr(const.PRESCRIPTS).get().split(const.SEPARATOR)
+    if network.hasAttr(const.ISLEGO):
+        pre = network.attr(const.PRESCRIPTS).get()
     else:
-        pre = None
+        pre = list()
     
     for script in pre:
         mod = importlib.import_module(script)
         mod.PrePost.run(context)
 
-    return node.name()
+    # naming
+    root_guide = guide.getParent(generations=-1)
+    root_network = root_guide.message.outputs(type="network")[0]
+    common_name = root_network.attr(const.COMMONNAME).get()
+    joint_name = root_network.attr(const.JOINTNAME).get()
+    side_name = map(lambda x: str() if x is None else x, root_network.attr(const.SIDENAME).get())
+    con_exp = root_network.attr(const.CONEXP).get()
+    jnt_exp = root_network.attr(const.JNTEXP).get()
 
-def stacking_blocks(context, node):
+    context[const.NAMING] = (common_name, joint_name, side_name, con_exp, jnt_exp)
+
+    return network
+
+def blocks_list(network, blocks):
+    children = network.attr(const.CHILDREN).outputs(type="network")
+    if children:
+        blocks.extend(children)
+        for child in children:
+            blocks_list(child, blocks)
+    else:
+        return
+
+def stacking_blocks(context, network):
     """ Assemble blocks
 
     step 0. get block info
@@ -59,38 +88,80 @@ def stacking_blocks(context, node):
 
     """
 
+    # init
     if const.INIT not in context:
-        init_rig_hierarchy(context, node)
-    info = get_block_info(node)
-    context_name = "{0}_{1}{2}".format(info[const.BLOCK_NAME], info[const.BLOCK_NAME], info[const.BLOCK_NAME])
-    naming_rule = info[const.NAMERULE].format(info[const.BLOCK_NAME],
-                                              info[const.BLOCK_NAME],
-                                              info[const.BLOCK_NAME],
-                                              "{description}",
-                                              "{extension}")
-    if context_name not in context:
-        context[context_name] = dict()
-        context[context_name][const.NAMERULE] = naming_rule
+        init_rig_hierarchy(context, network)
 
-    if not info[const.ISLEGO]:
-        block = importlib.import_module("lego.blocks.legobox.{0}".format(info[const.BLOCK_TYPE]))
+    # blocks list, context
+    blocks = list()
+    blocks.append(network)
+    blocks_list(network, blocks)
+    blocks = [x for x in blocks if not x.hasAttr(const.ISLEGO)]
+    for block in blocks:
+        common_name, joint_name, side_name, con_exp, jnt_exp = context[const.NAMING]
+        block_name = block.attr(const.BLOCK_NAME).get()
+        block_side = side_name[block.attr(const.BLOCK_SIDE).get()]
+        block_index = block.attr(const.BLOCK_INDEX).get()
+        common_name = common_name.format(name=block_name,
+                                         side=block_side,
+                                         index=block_index,
+                                         description="{description}",
+                                         extension="{extension}")
 
-        if const.STEP not in context[context_name]:
-            block.build(context[context_name], node, 0)
-            context[context_name][const.STEP] = 1
-        elif context[context_name][const.STEP] == 1:
-            block.build(context[context_name], node, 1)
-            context[context_name][const.STEP] = 2
+        joint_name = joint_name.format(name=block_name,
+                                       side=block_side,
+                                       index=block_index,
+                                       description="{description}",
+                                       extension="{extension}")
+
+        name = lib.get_context_name(block, side_name)
+        if name not in context:
+            log.log(level=0, msg="context {0}".format(name))
+            context[name] = OrderedDict()
+            context[name][const.NAMING] = (common_name, joint_name, con_exp, jnt_exp)
         else:
-            block.build(context[context_name], node, 2)
+            raise Exception("already context {0}".format(name))
 
-    if info[const.CHILDREN]:
-        for child in info[const.CHILDREN]:
-            stacking_blocks(context, child)
-    else:
-        return True
+    # import blocks
+    modules = list()
+    for index, block in enumerate(blocks):
+        common_name, joint_name, side_name, con_exp, jnt_exp = context[const.NAMING]
+        block_type = block.attr(const.BLOCK_TYPE).get()
 
-def clear(context, node):
+        name = lib.get_context_name(block, side_name)
+        log.log(level=0, msg="init {0}".format(name))
+        modules.append(importlib.import_module("lego.blocks.legobox.{0}".format(block_type)))
+        # importlib.reload(modules[index])
+
+    # create objects
+    for index, module in enumerate(modules):
+        side_name = context[const.NAMING][2]
+        name = lib.get_context_name(blocks[index], side_name)
+        log.log(level=0, msg="Objects {0}".format(name))
+        module.create_objects(context, name, blocks[index])
+
+    # create attributes
+    for index, module in enumerate(modules):
+        side_name = context[const.NAMING][2]
+        name = lib.get_context_name(blocks[index], side_name)
+        log.log(level=0, msg="Attribute {0}".format(name))
+        module.create_attributes(context, name, blocks[index])
+
+    # create connections
+    for index, module in enumerate(modules):
+        side_name = context[const.NAMING][2]
+        name = lib.get_context_name(blocks[index], side_name)
+        log.log(level=0, msg="Connections {0}".format(name))
+        module.create_connections(context, name, blocks[index])
+
+    # connect joints
+    for index, module in enumerate(modules):
+        side_name = context[const.NAMING][2]
+        name = lib.get_context_name(blocks[index], side_name)
+        log.log(level=0, msg="Joint structure {0}".format(name))
+        module.joint_structure(context, name, blocks[index])
+
+def clear(context):
     """ Clear scene 
 
     step 0. rig clean up
@@ -101,15 +172,18 @@ def clear(context, node):
 
     """
 
-    log.log(level=0, msg="clear !".format(node.attr(const.BLOCK_TYPE).get()))
-    node = pm.PyNode(node)
-    info = get_block_info(node)
-    
-    for script in info[const.POSTSCRIPTS]:
-        mod = importlib.import_module(script)
-        mod.PrePost.run(context)
+    log.log(level=0, msg="clear !")
+    log.log(level=0, msg="controller set")
+    log.log(level=0, msg="mesh set")
+    log.log(level=0, msg="joint set")
 
-def init_rig_hierarchy(context, node):
+    # node = pm.PyNode(node)
+    #
+    # for script in info[const.POSTSCRIPTS]:
+    #     mod = importlib.import_module(script)
+    #     mod.PrePost.run(context)
+
+def init_rig_hierarchy(context, network):
     """ create rig hierarchy 
     rig (hierarchy)
         model
@@ -134,49 +208,46 @@ def init_rig_hierarchy(context, node):
     model = primitive.addTransform(rig, "model", m=origin_matrix)
     blocks = primitive.addTransform(rig, "blocks", m=origin_matrix)
     joints = primitive.addTransform(rig, "joints", m=origin_matrix)
+    world_root = primitive.addTransform(blocks, "world_root", m=origin_matrix)
+    world_npo = primitive.addTransform(world_root, "world_npo", m=origin_matrix)
+    world_con = icon.create(world_npo, "world_{0}".format(context[const.NAMING][3]), origin_matrix, 17, "compas")
+    world_ref = primitive.addTransform(world_con, "world_ref", m=origin_matrix)
+    world_output = primitive.addTransform(world_root, "world_output", m=origin_matrix)
+    decompose = node.createDecomposeMatrixNode(world_ref.worldMatrix)
+
+    # attribute
+    attribute.addAttribute(rig, "controllersVis", "bool", True)
+    attribute.addAttribute(rig, "ControllersOnPlaybackVis", "bool", False)
+    attribute.addAttribute(rig, "jointsVis", "bool", False)
 
     # connections
+    decompose.outputTranslate >> world_output.t
+    decompose.outputRotate >> world_output.r
+    decompose.outputScale >> world_output.s
+    decompose.outputShear >> world_output.shear
+
     rig.controllersVis >> blocks.v
     rig.jointsVis >> joints.v
     rig.ControllersOnPlaybackVis >> blocks.hideOnPlayback
-
-    # attribute
     attribute.lockAttribute(rig)
     attribute.lockAttribute(model)
     attribute.lockAttribute(blocks)
     attribute.lockAttribute(joints)
-    attribute.addAttribute(rig, "controllerVis", "boolean", True)
-    attribute.addAttribute(rig, "ControllersOnPlaybackVis", "boolean", False)
-    attribute.addAttribute(rig, "jointsVis", "boolean", False)
+    attribute.lockAttribute(world_root)
+    attribute.lockAttribute(world_ref)
+    attribute.setKeyableAttributes(world_con)
 
-    context[const.INIT] = dict()
+    guide = network.attr(const.GUIDE).get()
+    root_guide = guide.getParent(generations=-1)
+    root_network = root_guide.message.outputs(type="network")[0]
+    rig.message >> root_network.rig
+
+    log.log(level=0, msg="context {0}".format(const.INIT))
+    context[const.INIT] = OrderedDict()
     context[const.INIT]["rig"] = rig
     context[const.INIT]["model"] = model
     context[const.INIT]["blocks"] = blocks
     context[const.INIT]["joints"] = joints
-
-def get_block_info(node):
-    """ get block info 
-
-    """
-    info = dict()
-
-    info[const.ISROOT]              = node.hasAttr(const.ISLEGO)
-    info[const.BLOCK_TYPE]          = node.attr(const.BLOCK_TYPE).get()
-    info[const.BLOCK_VERSION]       = node.attr(const.BLOCK_VERSION).get()
-    info[const.BLOCK_NAME]          = node.attr(const.BLOCK_NAME).get()
-    info[const.BLOCK_SIDE]          = node.attr(const.BLOCK_SIDE).get()
-    info[const.BLOCK_INDEX]         = node.attr(const.BLOCK_INDEX).get()
-    info[const.BLOCK_FEATURE]       = [x.name.get() for x in node.attr(const.BLOCK_FEATURE).outputs()]
-    info[const.BLOCK_UI]            = node.attr(const.BLOCK_UI).get()
-
-    info[const.BLOCK_PARENT]        = node.attr(const.BLOCK_PARENT).get()
-    info[const.BLOCK_PARENT_SPACE]  = [x.get() for x in node.attr(const.BLOCK_PARENT_SPACE).inputs(plugins=True)]
-
-    info[const.CHILDREN]            = node.attr(const.CHILDREN).outputs()
-    info[const.INPUT]               = node.attr(const.INPUT).get()
-    info[const.OUTPUT]              = [x.get() for x in node.attr(const.OUTPUT) if x.get()]
-    info[const.PRESCRIPTS]          = [x.get() for x in node.attr(const.PRESCRIPTS) if x.get()]
-    info[const.POSTSCRIPTS]         = [x.get() for x in node.attr(const.POSTSCRIPTS) if x.get()]
-    
-    return info
+    context[const.INIT]["object"] = [world_root, world_npo, world_con, world_ref, world_output]
+    context[const.INIT][const.OUTPUT] = [world_output]
+    context[const.INIT][const.BLOCK_UI] = world_con

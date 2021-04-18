@@ -40,6 +40,8 @@ __const.CHILDREN = "children"
 __const.GUIDE = "guide"
 __const.RIG = "rig"
 __const.OUTPUT = "output"
+__const.RUNPRESCRIPTS = "runPreScripts"
+__const.RUNPOSTSCRIPTS = "runPostScripts"
 __const.PRESCRIPTS = "preScripts"
 __const.POSTSCRIPTS = "postScripts"
 
@@ -50,8 +52,13 @@ __const.CONTROLLERS = "controllers"
 __const.SEPARATOR = ", "
 __const.STEP = "step"
 
-__const.NAMERULE = "nameRule"
-__const.JOINTNAMERULE = "jointNameRule"
+__const.SIDENAME = "sideName"
+__const.CONEXP = "controllerExp"
+__const.JNTEXP = "jointEXP"
+__const.NAMING = "naming"
+__const.CONTROLLERNAME = "controllerName"
+__const.JOINTNAME = "jointName"
+
 sys.modules[__name__] = __const
 
 

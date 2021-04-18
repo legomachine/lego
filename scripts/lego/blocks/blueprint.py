@@ -21,7 +21,6 @@ from mgear.core import (
 from lego.core.api import const
 
 import importlib
-import datetime
 
 
 def is_guide():
@@ -43,8 +42,6 @@ def is_guide():
 def init_guide_hierarchy():
     origin = dt.Vector(0, 0, 0)
     origin_matrix = transform.getTransformFromPos(origin)
-    now = datetime.datetime.now()
-    time = now.strftime("%Y-%m-%d %H:%M:%S")
 
     # node
     guide = primitive.addTransform(None, "guide", m=origin_matrix)
@@ -62,9 +59,21 @@ def init_guide_hierarchy():
     attribute.addAttribute(network, const.CHILDREN, "message")
     attribute.addAttribute(network, const.GUIDE, "message")
     attribute.addAttribute(network, const.RIG, "message")
+    attribute.addAttribute(network, const.COMMONNAME, "string", "{name}_{side}{index}_{description}_{extension}")
+    attribute.addAttribute(network, const.JOINTNAME, "string", "{name}_{side}{index}_{description}_{extension}")
+    attribute.addAttribute(network, const.CONEXP, "string", "con")
+    attribute.addAttribute(network, const.JNTEXP, "string", "jnt")
+    attribute.addAttribute(network, const.RUNPRESCRIPTS, "bool", False, keyable=False)
+    attribute.addAttribute(network, const.RUNPOSTSCRIPTS, "bool", False, keyable=False)
+    network.addAttr(const.SIDENAME, type="string", multi=True)
+    network.attr(const.SIDENAME)[0].set("C")
+    network.attr(const.SIDENAME)[1].set("L")
+    network.attr(const.SIDENAME)[2].set("R")
     network.addAttr(const.PRESCRIPTS, type="string", multi=True)
     network.addAttr(const.POSTSCRIPTS, type="string", multi=True)
-    attribute.addAttribute(network, "notes", "string", time)
+    network.addAttr(const.OUTPUT, type="string", multi=True)
+    network.attr(const.OUTPUT)[0].set("output")
+    attribute.addAttribute(network, "notes", "string")
 
     # connections
     guide.message >> network.attr(const.GUIDE)
@@ -73,12 +82,10 @@ def init_guide_hierarchy():
 
 def add_network(root):
     network = pm.createNode("network")
-    attribute.addAttribute(network, const.NAMERULE, "string", "{name}_{side}{index}_{description}_{extension}")
-    attribute.addAttribute(network, const.JOINTNAMERULE, "string", "{name}_{side}{index}_{description}_{extension}")
     attribute.addAttribute(network, const.BLOCK_TYPE, "string")
     attribute.addAttribute(network, const.BLOCK_VERSION, "string")
     attribute.addAttribute(network, const.BLOCK_NAME, "string")
-    attribute.addAttribute(network, const.BLOCK_SIDE, "string")
+    attribute.addEnumAttribute(network, const.BLOCK_SIDE, "center", ["center", "left", "right"], keyable=False)
     attribute.addAttribute(network, const.BLOCK_INDEX, "string")
     attribute.addAttribute(network, const.BLOCK_UI, "message")
     attribute.addAttribute(network, const.BLOCK_FEATURE, "message")
@@ -87,10 +94,8 @@ def add_network(root):
     attribute.addAttribute(network, const.CHILDREN, "message")
     attribute.addAttribute(network, const.GUIDE, "message")
     attribute.addAttribute(network, const.RIG, "message")
-    attribute.addAttribute(network, const.JOINT, "bool", True)
+    attribute.addAttribute(network, const.JOINT, "bool", True, keyable=False)
     network.addAttr(const.OUTPUT, type="string", multi=True)
-    network.addAttr(const.PRESCRIPTS, type="string", multi=True)
-    network.addAttr(const.POSTSCRIPTS, type="string", multi=True)
     root.message >> network.attr(const.GUIDE)
     return network
 
@@ -115,4 +120,35 @@ def find_index(name, side):
                 break
             num += 1
         return str(num)
-        
+
+
+class Blueprint(object):
+    """ guide system """
+
+    def __init__(self):
+        super(Blueprint, self).__init__()
+        self.joint_name_template = str()
+        self.joint_name_exp = const.JNTEXP
+        self.controller_name_template = str()
+        self.controller_name_exp = const.CONEXP
+        self.side_name = ["C", "L", "R"]
+        self.prescripts = list()
+        self.postscripts = list()
+        self.run_prescripts = False
+        self.run_postscripts = False
+
+
+    def initialize(self):
+        pass
+
+    def add_blocks(self):
+        pass
+
+    def remove_blocks(self):
+        pass
+
+    def get_from_hierarchy(self):
+        pass
+
+    def get_from_template(self, template):
+        pass

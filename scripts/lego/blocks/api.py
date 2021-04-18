@@ -16,13 +16,15 @@ import importlib
 # maya
 import pymel.core as pm
 
+from collections import OrderedDict
+
 
 def draw_blueprint(block):
     mod = importlib.import_module("lego.blocks.legobox.{0}.blueprint".format(block))
     mod.draw()
 
 def build_rig():
-    context = dict()
+    context = OrderedDict()
     node = assembler.ready(context)
     assembler.stacking_blocks(context, node)
     assembler.clear(context)
